@@ -1,0 +1,36 @@
+{
+  "name": "@anonymousmister/crane-tool",
+  "version": "1.0.2",
+  "description": "基于 Crane 的分层镜像构建工具,模仿 jib 的功能",
+  "type": "module",
+  "main": "bin/build.js",
+  "bin": {
+    "crane": "./bin/crane-cli.js",
+    "crane-tool-build": "./bin/build.js"
+  },
+  "files": [
+    "bin/",
+    "README.md",
+    "LICENSE"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/xaboy/form-create-designer.git"
+  },
+  "scripts": {
+    "postinstall": "node bin/install.js"
+  },
+  "keywords": [
+    "crane",
+    "jib",
+    "docker",
+    "nginx",
+    "vite"
+  ],
+  "author": "misterzhang",
+  "license": "MIT",
+  "dependencies": {
+    "ini": "^6.0.0",
+    "tar": "^7.5.2"
+  }
+}
