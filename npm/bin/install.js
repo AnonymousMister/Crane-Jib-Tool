@@ -7,7 +7,7 @@ import * as tar from 'tar'; // 引入 tar 模块
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
-const VERSION = '0.20.2';
+const VERSION = '0.20.7';
 
 /**
  * 暴露给 build.js 调用的安装函数

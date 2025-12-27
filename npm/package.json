@@ -1,6 +1,6 @@
 {
   "name": "@anonymousmister/crane-tool",
-  "version": "1.0.2",
+  "version": "1.1.0",
   "description": "基于 Crane 的分层镜像构建工具,模仿 jib 的功能",
   "type": "module",
   "main": "bin/build.js",
@@ -10,7 +10,7 @@
   },
   "files": [
     "bin/",
-    "README.md",
+    "../README.md",
     "LICENSE"
   ],
   "repository": {

@@ -1,0 +1,25 @@
+# required apiVersion and kind, for compatibility over versions of the cli
+apiVersion: jib/v1alpha1
+kind: BuildFile
+
+# full base image specification with detail for manifest lists or multiple architectures
+from:
+  image: nginx:1.13.5
+  platforms:
+    - "linux/amd64"
+    - "linux/arm/v7"
+to: index.docker.io/wumingq/test:${v}
+
+format: Docker # Docker or OCI
+
+
+exposedPorts:
+  - "80"
+
+# file layers of the container
+layers:
+  entries:
+    - name: "copy nginx.config"
+      files:
+        - src: "examples.conf"
+          dest: "/etc/nginx/conf.d/default.conf"
