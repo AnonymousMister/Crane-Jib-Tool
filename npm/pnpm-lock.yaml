@@ -8,9 +8,6 @@ importers:
 
   .:
     dependencies:
-      ini:
-        specifier: ^6.0.0
-        version: 6.0.0
       tar:
         specifier: ^7.5.2
         version: 7.5.2
@@ -24,10 +21,6 @@ packages:
   chownr@3.0.0:
     resolution: {integrity: sha512-+IxzY9BZOQd/XuYPRmrvEVjF/nqj5kgT4kEq7VofrDoM1MxoRjEWkrCC3EtLi59TVawxTAn+orJwFQcrqEN1+g==}
     engines: {node: '>=18'}
-
-  ini@6.0.0:
-    resolution: {integrity: sha512-IBTdIkzZNOpqm7q3dRqJvMaldXjDHWkEDfrwGEQTs5eaQMWV+djAhR+wahyNNMAa+qpbDUhBMVt4ZKNwpPm7xQ==}
-    engines: {node: ^20.17.0 || >=22.9.0}
 
   minipass@7.1.2:
     resolution: {integrity: sha512-qOOzS1cBTWYF4BH8fVePDBOO9iptMnGUEZwNc/cMWnTV2nVLZ7VoNWEPHkYczZA0pdoA7dl6e7FL659nX9S2aw==}
@@ -52,8 +45,6 @@ snapshots:
       minipass: 7.1.2
 
   chownr@3.0.0: {}
-
-  ini@6.0.0: {}
 
   minipass@7.1.2: {}
 

@@ -3,11 +3,12 @@ import os from 'os';
 import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
-import * as tar from 'tar'; // 引入 tar 模块
+import * as tar from 'tar'; 
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
-const VERSION = '0.20.7';
+const VERSION = '2.0.0-snapshot'; // 可以从 package.json 中读取
+const REPO = 'AnonymousMister/Crane-Jib-Tool';
 
 /**
  * 暴露给 build.js 调用的安装函数
@@ -21,31 +22,30 @@ export async function installCrane() {
     else if (platform === 'darwin') platformName = arch === 'arm64' ? 'Darwin_arm64' : 'Darwin_x86_64';
     else platformName = arch === 'arm64' ? 'Linux_arm64' : 'Linux_x86_64';
 
-    const url = `https://github.com/google/go-containerregistry/releases/download/v${VERSION}/go-containerregistry_${platformName}.tar.gz`;
-    const exeName = platform === 'win32' ? 'crane.exe' : 'crane';
+    const url = `https://github.com/${REPO}/releases/download/v${VERSION}/crane-jib-tool_${platformName}.tar.gz`;
+    const exeName = platform === 'win32' ? 'crane-jib-tool.exe' : 'crane-jib-tool';
     const targetPath = path.join(__dirname, exeName);
-
+    console.log("url = ",url)
     // 如果文件已存在，直接返回
-    if (fs.existsSync(targetPath)) return targetPath;
+    if (fs.existsSync(targetPath)) {
+        console.log(`✅ 已检测到 Crane-Jib-Tool 二进制文件: ${targetPath}`);
+        return targetPath;
+    }
 
-    console.log(`[Crane-Install] 正在下载并解压 Crane v${VERSION}...`);
+    console.log(`[Crane-Jib-Tool] 正在下载并解压 v${VERSION} (${platformName})...`);
 
     try {
         const response = await fetch(url);
         if (!response.ok) throw new Error(`下载失败: HTTP ${response.status}`);
 
         // 使用 tar.x 替代命令行解压
-        // 直接将 fetch 的 body 管道流向 tar 解压器
         const readableStream = Buffer.from(await response.arrayBuffer());
 
         // 创建一个临时目录或在当前目录解压指定文件
-        // tar.x ({ x: extract }) 参数说明：
-        // cwd: 解压到的目录
-        // filter: 只解压我们需要的那一个二进制文件
         await new Promise((resolve, reject) => {
             const writer = tar.x({
                 cwd: __dirname,
-                sync: true, // 使用同步或包装成 promise
+                sync: true, 
             }, [exeName]);
 
             // 将 buffer 写入解压器
@@ -59,13 +59,13 @@ export async function installCrane() {
         }
 
         if (fs.existsSync(targetPath)) {
-            console.log(`✅ Crane 安装就绪: ${targetPath}`);
+            console.log(`✅ Crane-Jib-Tool 安装就绪: ${targetPath}`);
             return targetPath;
         } else {
             throw new Error('解压过程未产生预期的二进制文件');
         }
     } catch (err) {
-        console.error('❌ Crane 安装失败:', err.message);
+        console.error('❌ Crane-Jib-Tool 安装失败:', err.message);
         throw err;
     }
 }

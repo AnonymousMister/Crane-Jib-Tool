@@ -1,21 +1,20 @@
 {
-  "name": "@anonymousmister/crane-tool",
-  "version": "1.1.0",
+  "name": "@anonymousmister/crane-jib-tool",
+  "version": "2.0.0-snapshot",
   "description": "基于 Crane 的分层镜像构建工具,模仿 jib 的功能",
   "type": "module",
   "main": "bin/build.js",
   "bin": {
-    "crane": "./bin/crane-cli.js",
-    "crane-tool-build": "./bin/build.js"
+    "crane-jib-tool": "./bin/cli.js"
   },
   "files": [
     "bin/",
-    "../README.md",
+    "README.md",
     "LICENSE"
   ],
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/xaboy/form-create-designer.git"
+    "url": "git+https://github.com/AnonymousMister/crane-jib-tool.git"
   },
   "scripts": {
     "postinstall": "node bin/install.js"
@@ -29,8 +28,7 @@
   ],
   "author": "misterzhang",
   "license": "MIT",
-  "dependencies": {
-    "ini": "^6.0.0",
+  "dependencies": { 
     "tar": "^7.5.2"
   }
 }
