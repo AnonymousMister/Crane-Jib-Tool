@@ -39,35 +39,47 @@ pnpm add @anonymousmister/crane-jib-tool -D
 
 
 ```yaml
+# required apiVersion and kind, for compatibility over versions of the cli
 apiVersion: jib/v1alpha1
 kind: BuildFile
 
+# full base image specification with detail for manifest lists or multiple architectures
 from:
   image: "ubuntu"
+  # set platforms for multi architecture builds, defaults to `linux/amd64`
   platforms:
     - "linux/amd64"
-    - architecture: "arm"
-      os: "linux"
-
+to: swr.cn-east-3.myhuaweicloud.com/your-project:tag
+# creation time sets the creation time of the container only
+# can be: millis since epoch (ex: 1000) or an ISO 8601 creation time (ex: 2020-06-08T14:54:36+00:00)
 creationTime: 2000
-format: Docker
+
+format: Docker # Docker or OCI
+
+# container environment variables
 environment:
   "KEY1": "v1"
   "KEY2": "v2"
 
+# container labels
 labels:
   "label1": "l1"
   "label2": "l2"
 
+# specify volume mount points
 volumes:
   - "/volume1"
   - "/volume2"
+
+# specify exposed ports metadata (port-number/protocol)
 exposedPorts:
   - "123/udp"
-  - "456"
+  - "456"      # default protocol is tcp
   - "789/tcp"
 
+# the user to run the container (does not affect file permissions)
 user: "customUser"
+
 workingDirectory: "/home"
 
 entrypoint:
@@ -77,27 +89,36 @@ cmd:
   - "--param"
   - "param"
 
+# file layers of the container
 layers:
-  properties:
-    filePermissions: "644"
-    directoryPermissions: "755"
-    user: "0"
-    group: "0"
-    timestamp: "1000"
+  properties:                        # file properties applied to all layers
+    filePermissions: "123"           # octal file permissions, default is 644
+    directoryPermissions: "123"      # octal directory permissions, default is 755
+    user: "2"                        # default user is 0
+    group: "4"                       # default group is 0
+    timestamp: "1232"                # timestamp can be millis since epoch or ISO 8601 format, default is "Epoch + 1 second"
   entries:
-    - name: "scripts"
-      properties:
-        filePermissions: "755"
-      files:
-        - src: "project/run.sh"
-          dest: "/home/run.sh"
-        - src: "scripts"
+    - name: "scripts"                # first layer
+      properties:                    # file properties applied to only this layer
+        filePermissions: "123"
+        # see above for full list of properties...
+      files:                         # a list of copy directives constitute a single layer
+        - src: "project/run.sh"      # a simple copy directive (inherits layer level file properties)
+          dest: "/home/run.sh"       # all 'dest' specifications must be absolute paths on the container
+        - src: "scripts"             # a second copy directive in the same layer
           dest: "/home/scripts"
-          excludes:
+          excludes:                  # exclude all files matching these patterns
             - "**/exclude.me"
             - "**/*.ignore"
-          includes:
+          includes:                  # include only files matching these patterns
             - "**/include.me"
+          properties:                # file properties applied to only this copy directive
+            filePermissions: "123"
+            # see above for full list of properties...  
+    - name: "images"                 # second layer, inherits file properties from global
+      files:
+        - src: "images"
+          dest: "/images"            
 ```
 
 ### 2. 执行构建
@@ -127,9 +148,6 @@ npx crane-jib-tool create -c configFile.yaml
 如果您需要手动安装 `crane-jib-tool` 二进制文件，可以使用以下命令：
 
 ```bash
-# 全局安装
-crane-jib-tool  install
-
 # 项目内安装
 npx crane-jib-tool install
 ```
@@ -138,12 +156,13 @@ npx crane-jib-tool install
 
 ### 命令列表
 
-| 命令                           | 描述 |
-|------------------------------| --- |
-| `crane install`              | 安装 `crane-jib-tool` 二进制文件 |
-| `crane create -c <template>` | 执行镜像构建 |
-| `crane help`                 | 显示帮助信息 |
-| 其他命令                         | 直接转发给 `crane-jib-tool` 二进制文件执行 |
+| 命令                                                                                         | 描述                             |
+|--------------------------------------------------------------------------------------------|--------------------------------|
+| `crane-jib-tool install`                                                                   | 安装 `crane-jib-tool` 二进制文件      |
+| `crane-jib-tool auth login  <image host>   -u <docker user name >  -p <docker passsword> ` | 登录Docker 仓库                    |
+| `crane-jib-tool create -c <template>`                                                      | 执行镜像构建                         |
+| `crane-jib-tool help`                                                                      | 显示帮助信息                         |
+| 其他命令                                                                                       | 直接转发给 `crane-jib-tool` 二进制文件执行 |
 
 ### 变量注入优先级
 
@@ -154,15 +173,13 @@ npx crane-jib-tool install
 3. **文件变量**：通过 `-f config.yaml` 加载。
 4. **命令行变量**：通过 `--val "KEY=VALUE"` 直接指定。
 
-### 使用 INI 文件作为变量源
+### 使用 yaml 文件作为变量源
 
 您可以创建一个 `config.yaml`：
 
-```ini
-APP_NAME = wlhy-wj-admin
-VERSION = 2.4.5
-DOCKER_USER = your_username
-DOCKER_PASS = your_password
+```yaml
+APP_NAME: wlhy-wj-admin
+VERSION: 2.4.5
 ```
 
 然后运行：
