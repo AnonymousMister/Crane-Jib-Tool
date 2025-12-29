@@ -8,7 +8,7 @@ import AdmZip from 'adm-zip';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
-const VERSION = '2.0.0-snapshot'; // 可以从 package.json 中读取
+const VERSION = '2.0.2'; // 可以从 package.json 中读取
 const REPO = 'AnonymousMister/Crane-Jib-Tool';
 
 /**
