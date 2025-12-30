@@ -89,41 +89,37 @@ export async function installCrane() {
     
     let buffer = null;
     let source = '';
-    
-    // 第一步：尝试从 GitHub Releases 下载
+
+    // 第一步：尝试使用本地 lib 目录下的方案
     try {
+            console.log('🔄 尝试使用本地 lib 目录下的方案...');
+            const libDir = path.join(__dirname, '../lib');
+            const localArchivePath = path.join(libDir, `crane-jib-tool_${platformName}.${fileExt}`);
+            if (fs.existsSync(localArchivePath)) {
+                try {
+                    buffer = fs.readFileSync(localArchivePath);
+                    source = `本地文件: ${localArchivePath}`;
+                    console.log(`✅ 成功加载本地备用文件: ${localArchivePath}`);
+                } catch (readErr) {
+                    throw new Error(`加载本地文件失败: ${readErr.message}`);
+                }
+            } else {
+                throw new Error(`本地 lib 目录下未找到备用文件`);
+            }
+    } catch (readErra) {
+        console.error('❌读取本地文件失败:', readErra.message);
+        // 第二步：尝试从 GitHub Releases 下载
+     try {
         const url = `https://github.com/${REPO}/releases/download/v${VERSION}/crane-jib-tool_${platformName}.${fileExt}`;
         console.log(`🔄 正在从 GitHub 下载: ${url}`);
-        
         const response = await fetch(url);
         if (!response.ok) throw new Error(`下载失败: HTTP ${response.status}`);
-        
         buffer = Buffer.from(await response.arrayBuffer());
         source = 'GitHub Releases';
-    } catch (downloadErr) {
-        console.error('❌ 从 GitHub Releases 下载失败:', downloadErr.message);
-        
-        // 第二步：尝试使用本地 lib 目录下的备用方案
-        console.log('🔄 尝试使用本地 lib 目录下的备用方案...');
-        
-        const libDir = path.join(__dirname, '../lib');
-        const localArchivePath = path.join(libDir, `crane-jib-tool_${platformName}.${fileExt}`);
-        
-        if (fs.existsSync(localArchivePath)) {
-            try {
-                buffer = fs.readFileSync(localArchivePath);
-                source = `本地文件: ${localArchivePath}`;
-                console.log(`✅ 成功加载本地备用文件: ${localArchivePath}`);
-            } catch (readErr) {
-                console.error('❌ 读取本地备用文件失败:', readErr.message);
-                throw new Error(`下载和本地备用方案均失败: ${downloadErr.message}`);
-            }
-        } else {
-            console.error(`❌ 本地 lib 目录下未找到备用文件: ${localArchivePath}`);
-            throw new Error(`下载和本地备用方案均失败: ${downloadErr.message}`);
-        }
+     } catch (downloadErr) {
+          throw new Error(`从 GitHub Releases 下载失败: ${downloadErr.message}`);
+     }
     }
-    
     // 第三步：解压文件（复用相同的解压逻辑）
     try {
         console.log(`🔄 正在解压文件 (来源: ${source})...`);
