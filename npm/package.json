@@ -1,6 +1,6 @@
 {
   "name": "@anonymousmister/crane-jib-tool",
-  "version": "2.0.3",
+  "version": "2.0.4",
   "description": "基于 Crane 的分层镜像构建工具,模仿 jib 的功能",
   "type": "module",
   "bin": {
