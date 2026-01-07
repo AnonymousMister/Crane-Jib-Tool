@@ -1,6 +1,7 @@
 package layer
 
 import (
+	"archive/tar"
 	"fmt"
 	"io"
 	"os"
@@ -283,82 +284,154 @@ func ProcessLayers(cfg *config.Config, rootTmpDir string) ([]string, error) {
 	}
 
 	// 遍历所有层
-	for i, layerEntry := range cfg.Layers.Entries {
+	for _, layerEntry := range cfg.Layers.Entries {
 		// 合并全局属性和层级属性
 		mergedProps := MergeProperties(cfg.Layers.Properties, layerEntry.Properties)
 
-		// 创建层的临时目录
-		layerDir, err := os.MkdirTemp(rootTmpDir, fmt.Sprintf("layer-%d-", i))
+		// 创建 tar 文件路径
+		layerTarPath := filepath.Join(rootTmpDir, fmt.Sprintf("%s.tar", layerEntry.Name))
+		fmt.Printf("   📦 Creating layer: %s -> %s\n", layerEntry.Name, layerTarPath)
+
+		// 创建 tar 文件
+		dstFile, err := os.Create(layerTarPath)
 		if err != nil {
-			return nil, fmt.Errorf("failed to create layer temp dir: %w", err)
+			return nil, fmt.Errorf("failed to create tar file %s: %w", layerTarPath, err)
 		}
 
-		// 遍历层中的所有文件，复制到临时目录
+		// 创建 tar writer
+		w := tar.NewWriter(dstFile)
+
+		// 处理每个文件条目
 		for _, file := range layerEntry.Files {
 			// 获取源文件信息
 			srcInfo, err := os.Stat(file.Src)
 			if err != nil {
+				dstFile.Close()
+				os.Remove(layerTarPath)
 				return nil, fmt.Errorf("failed to stat file %s: %w", file.Src, err)
 			}
-
-			// 构建目标路径
-			destPath := filepath.Join(layerDir, file.Dest)
-
-			// 确定最终的源路径和目标路径
-			finalSrcPath := file.Src
-			finalDestPath := destPath
-
-			// 根据 src 类型和 dest 格式调整目标路径
-			if srcInfo.IsDir() {
-				// src 是目录，dest 始终视为目录
-				// 确保目标目录存在
-				if err := os.MkdirAll(finalDestPath, 0755); err != nil {
-					return nil, fmt.Errorf("failed to create dest dir: %w", err)
-				}
-			} else {
-				// src 是文件
-				if strings.HasSuffix(file.Dest, "/") {
-					// dest 以 / 结尾，视为目标目录
-					// 确保目标目录存在
-					if err := os.MkdirAll(finalDestPath, 0755); err != nil {
-						return nil, fmt.Errorf("failed to create dest dir: %w", err)
-					}
-					// 目标文件名与源文件名相同
-					finalDestPath = filepath.Join(finalDestPath, filepath.Base(file.Src))
-				} else {
-					// dest 不以 / 结尾，视为目标文件位置
-					// 确保父目录存在
-					if err := os.MkdirAll(filepath.Dir(finalDestPath), 0755); err != nil {
-						return nil, fmt.Errorf("failed to create dest dir: %w", err)
-					}
-				}
+			mergedProps := MergeProperties(mergedProps, file.Properties)
+			// 准备 tar 选项
+			tarOptions := tarutil.TarOptions{
+				PreservePermissions:  false,
+				FilePermissions:      mergedProps.FilePermissions,
+				DirectoryPermissions: mergedProps.DirectoryPermissions,
+				User:                 mergedProps.User,
+				Group:                mergedProps.Group,
+				Timestamp:            mergedProps.Timestamp,
 			}
 
-			// 如果是目录，递归复制并应用过滤
+			// 根据文件类型处理
 			if srcInfo.IsDir() {
-				// 递归复制目录，应用 excludes 和 includes
-				if err := copyDirWithFilter(finalSrcPath, finalDestPath, file.Excludes, file.Includes); err != nil {
-					return nil, fmt.Errorf("failed to copy directory %s to %s: %w", finalSrcPath, finalDestPath, err)
+				// 源是目录，需要递归添加
+				// 计算目标路径前缀（去掉末尾的/如果有的话）
+				destPrefix := file.Dest
+				if strings.HasSuffix(destPrefix, "/") {
+					destPrefix = destPrefix[:len(destPrefix)-1]
+				}
+
+				// 遍历目录并添加到 tar
+				walkErr := filepath.Walk(file.Src, func(filePath string, info os.FileInfo, err error) error {
+					if err != nil {
+						return err
+					}
+
+					// 相对于源目录的路径
+					relPath, err := filepath.Rel(file.Src, filePath)
+					if err != nil {
+						return err
+					}
+
+					// 检查是否应该包含该文件
+					if !ShouldIncludeFile(relPath, file.Excludes, file.Includes) {
+						fmt.Printf("   🚫 Skipping excluded: %s\n", filePath)
+						if info.IsDir() {
+							return filepath.SkipDir
+						}
+						return nil
+					}
+
+					// 构建 tar 中的目标路径
+					var tarPath string
+					if relPath == "." {
+						// 根目录，直接使用目标前缀
+						tarPath = destPrefix
+					} else {
+						// 子文件/目录，添加到目标前缀下
+						tarPath = filepath.Join(destPrefix, relPath)
+					}
+
+					// 转换为 tar 格式的路径（使用正斜杠）
+					tarPath = filepath.ToSlash(tarPath)
+					// 处理 Windows 驱动器号（如 C:\ -> /C/）
+					if len(tarPath) > 1 && tarPath[1] == ':' {
+						tarPath = "/" + strings.ToUpper(string(tarPath[0])) + tarPath[2:]
+					}
+					// 确保所有反斜杠都被转换为正斜杠
+					tarPath = strings.ReplaceAll(tarPath, "\\", "/")
+
+					// 添加文件到 tar
+					if err := addFileToTarWithPath(w, filePath, tarPath, info, tarOptions); err != nil {
+						return fmt.Errorf("failed to add file %s to tar: %w", filePath, err)
+					}
+
+					return nil
+				})
+
+				if walkErr != nil {
+					w.Close()
+					dstFile.Close()
+					os.Remove(layerTarPath)
+					return nil, fmt.Errorf("failed to walk directory %s: %w", file.Src, walkErr)
 				}
 			} else {
+				// 源是文件，直接添加
 				// 检查是否应该包含该文件
 				if !ShouldIncludeFile(filepath.Base(file.Src), file.Excludes, file.Includes) {
-					fmt.Printf("   🚫 Skipping excluded: %s\n", finalSrcPath)
+					fmt.Printf("   🚫 Skipping excluded: %s\n", file.Src)
 					continue
 				}
 
-				// 复制单个文件
-				if err := copyFile(finalSrcPath, finalDestPath); err != nil {
-					return nil, fmt.Errorf("failed to copy file %s to %s: %w", finalSrcPath, finalDestPath, err)
+				// 构建 tar 中的目标路径
+				var tarPath string
+				if strings.HasSuffix(file.Dest, "/") {
+					// 目标是目录，使用源文件名
+					tarPath = filepath.Join(file.Dest, filepath.Base(file.Src))
+				} else {
+					// 目标是文件，直接使用
+					tarPath = file.Dest
+				}
+
+				// 转换为 tar 格式的路径（使用正斜杠）
+				tarPath = filepath.ToSlash(tarPath)
+				// 处理 Windows 驱动器号（如 C:\ -> /C/）
+				if len(tarPath) > 1 && tarPath[1] == ':' {
+					tarPath = "/" + strings.ToUpper(string(tarPath[0])) + tarPath[2:]
+				}
+				// 确保所有反斜杠都被转换为正斜杠
+				tarPath = strings.ReplaceAll(tarPath, "\\", "/")
+
+				// 添加文件到 tar
+				if err := addFileToTarWithPath(w, file.Src, tarPath, srcInfo, tarOptions); err != nil {
+					w.Close()
+					dstFile.Close()
+					os.Remove(layerTarPath)
+					return nil, fmt.Errorf("failed to add file %s to tar: %w", file.Src, err)
 				}
 			}
 		}
 
-		// 创建 tar 包
-		layerTarPath := filepath.Join(rootTmpDir, fmt.Sprintf("%s.tar", layerEntry.Name))
-		fmt.Printf("   📦 Creating layer: %s -> %s\n", layerEntry.Name, layerTarPath)
-		if err := CreateTarLayer(layerDir, layerTarPath, mergedProps); err != nil {
-			return nil, fmt.Errorf("failed to create layer tar: %w", err)
+		// 关闭 tar writer
+		if err := w.Close(); err != nil {
+			dstFile.Close()
+			os.Remove(layerTarPath)
+			return nil, fmt.Errorf("failed to close tar writer: %w", err)
+		}
+
+		// 关闭目标文件
+		if err := dstFile.Close(); err != nil {
+			os.Remove(layerTarPath)
+			return nil, fmt.Errorf("failed to close tar file: %w", err)
 		}
 
 		// 添加到层路径列表
@@ -366,4 +439,115 @@ func ProcessLayers(cfg *config.Config, rootTmpDir string) ([]string, error) {
 	}
 
 	return layerPaths, nil
+}
+
+// addFileToTarWithPath 将文件添加到 tar 包，支持自定义 tar 内路径
+func addFileToTarWithPath(w *tar.Writer, filePath, tarPath string, info os.FileInfo, opt tarutil.TarOptions) error {
+	// 打开文件（如果是目录则不需要）
+	var file *os.File
+	var err error
+	if !info.IsDir() {
+		file, err = os.Open(filePath)
+		if err != nil {
+			return fmt.Errorf("failed to open file %s: %w", filePath, err)
+		}
+		defer file.Close()
+	}
+
+	// 创建 tar 头
+	header, err := tar.FileInfoHeader(info, "")
+	if err != nil {
+		return fmt.Errorf("failed to create tar header for %s: %w", filePath, err)
+	}
+
+	// 设置自定义 tar 路径
+	header.Name = tarPath
+
+	// 设置文件权限
+	if !opt.PreservePermissions {
+		// 使用自定义或默认权限
+		if info.IsDir() {
+			// 目录权限
+			if opt.DirectoryPermissions != "" {
+				// 解析自定义目录权限
+				var dirMode int64
+				if _, err := fmt.Sscanf(opt.DirectoryPermissions, "%o", &dirMode); err == nil {
+					header.Mode = dirMode
+				} else {
+					// 解析失败，使用默认权限
+					header.Mode = int64(0755)
+				}
+			} else {
+				// 使用默认目录权限
+				header.Mode = int64(0755)
+			}
+		} else {
+			// 文件权限
+			if opt.FilePermissions != "" {
+				// 解析自定义文件权限
+				var fileMode int64
+				if _, err := fmt.Sscanf(opt.FilePermissions, "%o", &fileMode); err == nil {
+					header.Mode = fileMode
+				} else {
+					// 解析失败，使用默认权限
+					header.Mode = int64(0644)
+				}
+			} else {
+				// 使用默认文件权限
+				header.Mode = int64(0644)
+			}
+		}
+	}
+
+	// 设置用户和组
+	if opt.User != "" {
+		var uid int
+		if _, err := fmt.Sscanf(opt.User, "%d", &uid); err == nil {
+			header.Uid = uid
+		}
+	}
+	if opt.Group != "" {
+		var gid int
+		if _, err := fmt.Sscanf(opt.Group, "%d", &gid); err == nil {
+			header.Gid = gid
+		}
+	}
+
+	// 设置修改时间
+	if opt.Timestamp != "" {
+		// 尝试解析为时间戳（毫秒）
+		var ms int64
+		if _, err := fmt.Sscanf(opt.Timestamp, "%d", &ms); err == nil {
+			// 转换为纳秒
+			timestamp := time.Unix(0, ms*1000000)
+			header.ModTime = timestamp
+			header.AccessTime = timestamp
+			header.ChangeTime = timestamp
+		} else {
+			// 尝试解析为 ISO 8601 格式
+			if ts, err := time.Parse(time.RFC3339, opt.Timestamp); err == nil {
+				header.ModTime = ts
+				header.AccessTime = ts
+				header.ChangeTime = ts
+			}
+			// 解析失败则使用文件的修改时间（已在 FileInfoHeader 中设置）
+		}
+	}
+
+	// 写入 tar 头
+	if err := w.WriteHeader(header); err != nil {
+		return fmt.Errorf("failed to write tar header for %s: %w", filePath, err)
+	}
+
+	// 如果是目录，不需要写入内容
+	if info.IsDir() {
+		return nil
+	}
+
+	// 写入文件内容
+	if _, err := io.Copy(w, file); err != nil {
+		return fmt.Errorf("failed to write file content for %s: %w", filePath, err)
+	}
+
+	return nil
 }
