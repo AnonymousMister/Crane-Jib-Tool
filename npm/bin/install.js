@@ -10,8 +10,18 @@ import { VERSION } from './version.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
+ 
 
-const REPO = 'AnonymousMister/Crane-Jib-Tool';
+const DOWNLOAD_SOURCES = [
+    {
+        name: 'GitHub Releases',
+        urlTemplate: 'https://github.com/AnonymousMister/Crane-Jib-Tool/releases/download/v${VERSION}/crane-jib-tool_${platformName}.${fileExt}'
+    },
+    {
+        name: 'Gitee Releases',
+        urlTemplate: 'https://gitee.com/xiaing/Crane-Jib-Tool/releases/download/v${VERSION}/Crane-Jib-Tool_${platformName}.${fileExt}'
+    }
+];
 
 /**
  * 获取平台名称
@@ -126,34 +136,26 @@ export async function installCrane() {
     let buffer = null;
     let source = '';
 
-    // 第一步：尝试使用本地 lib 目录下的方案
-    try {
-        console.log('🔄 尝试使用本地 lib 目录下的方案...');
-        const libDir = path.join(__dirname, '../lib');
-        const localArchivePath = path.join(libDir, `crane-jib-tool_${platformName}.${fileExt}`);
-        if (fs.existsSync(localArchivePath)) {
-            try {
-                buffer = fs.readFileSync(localArchivePath);
-                source = `本地文件: ${localArchivePath}`;
-                console.log(`✅ 成功加载本地备用文件: ${localArchivePath}`);
-            } catch (readErr) {
-                throw new Error(`加载本地文件失败: ${readErr.message}`);
-            }
-        } else {
-            throw new Error(`本地 lib 目录下未找到备用文件`);
-        }
-    } catch (readErra) {
-        console.log('ℹ️ 本地文件不可用:', readErra.message);
-        // 第二步：尝试从 GitHub Releases 下载
+    // 遍历所有下载源，依次尝试下载
+    for (const sourceConfig of DOWNLOAD_SOURCES) {
+        const url = sourceConfig.urlTemplate 
+            .replace('${VERSION}', VERSION)
+            .replace('${platformName}', platformName)
+            .replace('${fileExt}', fileExt);
+
         try {
-            const url = `https://github.com/${REPO}/releases/download/v${VERSION}/crane-jib-tool_${platformName}.${fileExt}`;
-            console.log(`🔄 正在从 GitHub 下载: ${url}`);
+            console.log(`🔄 正在从 ${sourceConfig.name}`);
             const response = await fetch(url);
             if (!response.ok) throw new Error(`下载失败: HTTP ${response.status}`);
             buffer = Buffer.from(await response.arrayBuffer());
-            source = 'GitHub Releases';
-        } catch (downloadErr) {
-            throw new Error(`从 GitHub Releases 下载失败: ${downloadErr.message}`);
+            source = sourceConfig.name;
+            console.log(`✅ ${sourceConfig.name} 下载成功`);
+            break;
+        } catch (err) {
+            console.log(`⚠️ ${sourceConfig.name} 下载失败: ${err.message}`);
+            if (sourceConfig === DOWNLOAD_SOURCES[DOWNLOAD_SOURCES.length - 1]) {
+                throw new Error(`所有下载源均失败: ${err.message}`);
+            }
         }
     }
 
