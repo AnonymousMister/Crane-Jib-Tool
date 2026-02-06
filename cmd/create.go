@@ -274,9 +274,16 @@ func NewCmdCreate(options *[]crane.Option) *cobra.Command {
 
 				// 多个平台，保存到同一个 OCI layout 目录（带平台信息）
 				fmt.Printf("   💾 Saving image to OCI layout: %s\n", ociLayoutDir)
-				lp, err := layout.Write(ociLayoutDir, empty.Index)
-				if err != nil {
-					// 如果已存在，则打开
+				var lp layout.Path
+				// 检查 OCI layout 是否已存在（通过检查 oci-layout 文件）
+				if _, err := os.Stat(filepath.Join(ociLayoutDir, "oci-layout")); os.IsNotExist(err) {
+					// 不存在，创建新的
+					lp, err = layout.Write(ociLayoutDir, empty.Index)
+					if err != nil {
+						return fmt.Errorf("creating OCI layout: %w", err)
+					}
+				} else {
+					// 已存在，打开
 					lp, err = layout.FromPath(ociLayoutDir)
 					if err != nil {
 						return fmt.Errorf("opening OCI layout: %w", err)
