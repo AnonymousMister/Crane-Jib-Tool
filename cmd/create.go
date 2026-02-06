@@ -30,6 +30,7 @@ import (
 	"github.com/google/go-containerregistry/pkg/v1/layout"
 	"github.com/google/go-containerregistry/pkg/v1/mutate"
 	"github.com/google/go-containerregistry/pkg/v1/remote"
+	"github.com/google/go-containerregistry/pkg/v1/types"
 	"github.com/spf13/cobra"
 )
 
@@ -260,52 +261,67 @@ func NewCmdCreate(options *[]crane.Option) *cobra.Command {
 					return fmt.Errorf("mutating config: %w", err)
 				}
 
-				if len(platforms) == 1 {
-					// 单个平台，直接推送
-					fmt.Printf("   📤 Pushing image: %s\n", cfg.To)
-					if err := crane.Push(img, cfg.To, append(*options, crane.WithPlatform(platform))...); err != nil {
-						return fmt.Errorf("pushing image %s: %w", cfg.To, err)
-					}
-					platformImageRefs = append(platformImageRefs, targetPlatform)
-				} else {
-					// 多个平台，保存到同一个 OCI layout 目录
-					fmt.Printf("   💾 Saving image to OCI layout: %s\n", ociLayoutDir)
-					if err := crane.SaveOCI(img, ociLayoutDir); err != nil {
-						return fmt.Errorf("saving image to OCI layout: %w", err)
-					}
-					platformImageRefs = append(platformImageRefs, targetPlatform)
+				// 多个平台，保存到同一个 OCI layout 目录
+				fmt.Printf("   💾 Saving image to OCI layout: %s\n", ociLayoutDir)
+				if err := crane.SaveOCI(img, ociLayoutDir); err != nil {
+					return fmt.Errorf("saving image to OCI layout: %w", err)
 				}
+				platformImageRefs = append(platformImageRefs, targetPlatform)
 
 				fmt.Printf("   ✅ Platform %s completed!\n", targetPlatform)
 			}
 
-			// 18. 多平台镜像整合推送
-			if len(platforms) > 1 {
-				fmt.Printf("\n📦 Creating multi-platform manifest...\n")
-				fmt.Printf("   📤 Pushing to: %s\n", cfg.To)
+			repository := cfg.To.Repository
+			var pushImage string
+			for idex, tag := range cfg.To.Tags {
 
-				// 从 OCI layout 加载索引
-				fmt.Printf("   🛠️  Combining %d platform images from OCI layout...\n", len(platformImageRefs))
-				idx, err := layout.ImageIndexFromPath(ociLayoutDir)
-				if err != nil {
-					return fmt.Errorf("loading OCI layout as index: %w", err)
+				if idex == 0 {
+					pushImage = repository + ":" + tag
+
+					fmt.Printf("\n📦 Creating multi-platform manifest...\n")
+					fmt.Printf("   📤 Pushing to: %s\n", pushImage)
+
+					// 从 OCI layout 加载索引
+					fmt.Printf("   🛠️  Combining %d platform images from OCI layout...\n", len(platformImageRefs))
+					idx, err := layout.ImageIndexFromPath(ociLayoutDir)
+					if err != nil {
+						return fmt.Errorf("loading OCI layout as index: %w", err)
+					}
+					// 根据 format 配置选择推送格式
+					var pushIdx v1.ImageIndex = idx
+					if strings.EqualFold(cfg.Format, "Docker") {
+						fmt.Printf("   🔄 Converting to Docker Manifest List format...\n")
+						pushIdx = mutate.IndexMediaType(idx, types.DockerManifestList)
+					} else {
+						fmt.Printf("   📋 Using OCI Image Index format...\n")
+					}
+
+					// 推送多平台镜像索引
+					fmt.Printf("   📤 Pushing multi-platform image index...\n")
+					o := crane.GetOptions(*options...)
+					ref, err := name.ParseReference(pushImage, o.Name...)
+					if err != nil {
+						return fmt.Errorf("parsing reference: %w", err)
+					}
+
+					if err := remote.WriteIndex(ref, pushIdx, o.Remote...); err != nil {
+						return fmt.Errorf("pushing multi-platform index: %w", err)
+					}
+				} else {
+					nameImage := repository + ":" + tag
+					fmt.Printf("   🏷️  Tagging as: %s\n", nameImage)
+					// crane.Tag(src, tag) - src 是已存在的镜像，tag 是新标签
+					if err := crane.Tag(pushImage, tag, *options...); err != nil {
+						return fmt.Errorf("tagging image %s: %w", nameImage, err)
+					}
 				}
 
-				// 推送多平台镜像索引
-				fmt.Printf("   📤 Pushing multi-platform image index...\n")
-				o := crane.GetOptions(*options...)
-				ref, err := name.ParseReference(cfg.To, o.Name...)
-				if err != nil {
-					return fmt.Errorf("parsing reference: %w", err)
-				}
-
-				if err := remote.WriteIndex(ref, idx, o.Remote...); err != nil {
-					return fmt.Errorf("pushing multi-platform index: %w", err)
-				}
 			}
 
 			fmt.Printf("\n✅ Image creation completed successfully!\n")
-			fmt.Printf("   🎉 Images: %v\n   🎉 platform: %v\n", cfg.To, platformImageRefs)
+			fmt.Printf("   🎉 Repository: %s\n", cfg.To.Repository)
+			fmt.Printf("   🎉 Tags: %v\n", cfg.To.Tags)
+			fmt.Printf("   🎉 Platforms: %v\n", platformImageRefs)
 			return nil
 		},
 	}

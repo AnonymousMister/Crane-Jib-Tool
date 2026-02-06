@@ -27,8 +27,31 @@ type Config struct {
 	Entrypoint   []string          `yaml:"entrypoint"`
 	Cmd          []string          `yaml:"cmd"`
 	Layers       LayerConfig       `yaml:"layers"`
-	To           string            `yaml:"to"`
+	To           Tag               `yaml:"to"`
 	Insecure     bool              `yaml:"insecure"`
+}
+
+type Tag struct {
+	Repository string   `yaml:"image"`
+	Tags       []string `yaml:"tags"`
+}
+
+func (t *Tag) UnmarshalYAML(value *yaml.Node) error {
+	if value.Kind == yaml.ScalarNode {
+		lastIndex := strings.LastIndex(value.Value, ":")
+		if lastIndex == -1 {
+			return fmt.Errorf("invalid tag format: %s", value.Value)
+		}
+		repository := value.Value[:lastIndex]
+		tag := value.Value[lastIndex+1:]
+		t.Repository = repository
+		t.Tags = []string{tag}
+		return nil
+	} else if value.Kind == yaml.MappingNode {
+		type rawTag Tag
+		return value.Decode((*rawTag)(t))
+	}
+	return fmt.Errorf("unsupported tag type: %s", value.Tag)
 }
 
 // FromConfig 定义了基础镜像的配置
@@ -157,7 +180,7 @@ func ParseConfig(configPath string, varPool map[string]string) (*Config, error) 
 	if cfg.From.Image == "" {
 		return nil, errors.New("from.image field is required in config file")
 	}
-	if cfg.To == "" {
+	if cfg.To.Repository == "" {
 		return nil, errors.New("to field is required in config file")
 	}
 
