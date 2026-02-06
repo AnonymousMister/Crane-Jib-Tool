@@ -272,50 +272,43 @@ func NewCmdCreate(options *[]crane.Option) *cobra.Command {
 			}
 
 			repository := cfg.To.Repository
-			var pushImage string
-			for idex, tag := range cfg.To.Tags {
+			fmt.Printf("\n📦 Creating multi-platform manifest...\n")
 
-				if idex == 0 {
-					pushImage = repository + ":" + tag
+			// 从 OCI layout 加载索引
+			fmt.Printf("   🛠️  Combining %d platform images from OCI layout...\n", len(platformImageRefs))
+			idx, err := layout.ImageIndexFromPath(ociLayoutDir)
+			if err != nil {
+				return fmt.Errorf("loading OCI layout as index: %w", err)
+			}
 
-					fmt.Printf("\n📦 Creating multi-platform manifest...\n")
-					fmt.Printf("   📤 Pushing to: %s\n", pushImage)
+			// 根据 format 配置选择推送格式
+			var pushIdx v1.ImageIndex = idx
+			if strings.EqualFold(cfg.Format, "Docker") {
+				fmt.Printf("   🔄 Converting to Docker Manifest List format...\n")
+				pushIdx = mutate.IndexMediaType(idx, types.DockerManifestList)
+			} else {
+				fmt.Printf("   📋 Using OCI Image Index format...\n")
+			}
 
-					// 从 OCI layout 加载索引
-					fmt.Printf("   🛠️  Combining %d platform images from OCI layout...\n", len(platformImageRefs))
-					idx, err := layout.ImageIndexFromPath(ociLayoutDir)
-					if err != nil {
-						return fmt.Errorf("loading OCI layout as index: %w", err)
-					}
-					// 根据 format 配置选择推送格式
-					var pushIdx v1.ImageIndex = idx
-					if strings.EqualFold(cfg.Format, "Docker") {
-						fmt.Printf("   🔄 Converting to Docker Manifest List format...\n")
-						pushIdx = mutate.IndexMediaType(idx, types.DockerManifestList)
-					} else {
-						fmt.Printf("   📋 Using OCI Image Index format...\n")
-					}
+			o := crane.GetOptions(*options...)
 
-					// 推送多平台镜像索引
-					fmt.Printf("   📤 Pushing multi-platform image index...\n")
-					o := crane.GetOptions(*options...)
-					ref, err := name.ParseReference(pushImage, o.Name...)
-					if err != nil {
-						return fmt.Errorf("parsing reference: %w", err)
-					}
-
-					if err := remote.WriteIndex(ref, pushIdx, o.Remote...); err != nil {
-						return fmt.Errorf("pushing multi-platform index: %w", err)
-					}
+			// 推送到所有 tags（直接推送 index，不使用 crane.Tag 避免重复下载）
+			for i, tag := range cfg.To.Tags {
+				targetImage := repository + ":" + tag
+				if i == 0 {
+					fmt.Printf("   📤 Pushing to: %s\n", targetImage)
 				} else {
-					nameImage := repository + ":" + tag
-					fmt.Printf("   🏷️  Tagging as: %s\n", nameImage)
-					// crane.Tag(src, tag) - src 是已存在的镜像，tag 是新标签
-					if err := crane.Tag(pushImage, tag, *options...); err != nil {
-						return fmt.Errorf("tagging image %s: %w", nameImage, err)
-					}
+					fmt.Printf("   🏷️  Pushing tag: %s\n", targetImage)
 				}
 
+				ref, err := name.ParseReference(targetImage, o.Name...)
+				if err != nil {
+					return fmt.Errorf("parsing reference: %w", err)
+				}
+
+				if err := remote.WriteIndex(ref, pushIdx, o.Remote...); err != nil {
+					return fmt.Errorf("pushing multi-platform index to %s: %w", targetImage, err)
+				}
 			}
 
 			fmt.Printf("\n✅ Image creation completed successfully!\n")
