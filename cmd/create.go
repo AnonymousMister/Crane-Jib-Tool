@@ -27,6 +27,7 @@ import (
 	"github.com/google/go-containerregistry/pkg/crane"
 	"github.com/google/go-containerregistry/pkg/name"
 	v1 "github.com/google/go-containerregistry/pkg/v1"
+	"github.com/google/go-containerregistry/pkg/v1/empty"
 	"github.com/google/go-containerregistry/pkg/v1/layout"
 	"github.com/google/go-containerregistry/pkg/v1/mutate"
 	"github.com/google/go-containerregistry/pkg/v1/remote"
@@ -261,14 +262,33 @@ func NewCmdCreate(options *[]crane.Option) *cobra.Command {
 					return fmt.Errorf("mutating config: %w", err)
 				}
 
-				// 多个平台，保存到同一个 OCI layout 目录
+				// 获取镜像的实际平台信息（可能与配置的不同，如基础镜像不支持某平台）
+				actualPlatform := &v1.Platform{
+					OS:           imgCfg.OS,
+					Architecture: imgCfg.Architecture,
+					Variant:      imgCfg.Variant,
+				}
+				if actualPlatform.String() != platform.String() {
+					fmt.Printf("   ⚠️  Warning: actual platform %s differs from requested %s\n", actualPlatform.String(), platform.String())
+				}
+
+				// 多个平台，保存到同一个 OCI layout 目录（带平台信息）
 				fmt.Printf("   💾 Saving image to OCI layout: %s\n", ociLayoutDir)
-				if err := crane.SaveOCI(img, ociLayoutDir); err != nil {
+				lp, err := layout.Write(ociLayoutDir, empty.Index)
+				if err != nil {
+					// 如果已存在，则打开
+					lp, err = layout.FromPath(ociLayoutDir)
+					if err != nil {
+						return fmt.Errorf("opening OCI layout: %w", err)
+					}
+				}
+				// 使用镜像的实际平台信息，确保 index.json 中的 platform 与镜像一致
+				if err := lp.AppendImage(img, layout.WithPlatform(*actualPlatform)); err != nil {
 					return fmt.Errorf("saving image to OCI layout: %w", err)
 				}
-				platformImageRefs = append(platformImageRefs, targetPlatform)
+				platformImageRefs = append(platformImageRefs, actualPlatform.String())
 
-				fmt.Printf("   ✅ Platform %s completed!\n", targetPlatform)
+				fmt.Printf("   ✅ Platform %s completed!\n", actualPlatform.String())
 			}
 
 			repository := cfg.To.Repository
