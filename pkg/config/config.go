@@ -1,11 +1,13 @@
 package config
 
 import (
+	"bytes"
 	"errors"
 	"fmt"
 	"os"
 	"regexp"
 	"strings"
+	"text/template"
 	"time"
 
 	"gopkg.in/yaml.v3"
@@ -136,6 +138,38 @@ func BuildVarPool(valFiles []string, vals map[string]string) map[string]string {
 	return pool
 }
 
+func templateFuncMap() template.FuncMap {
+	return template.FuncMap{
+		"default": func(defaultVal, val string) string {
+			if val == "" {
+				return defaultVal
+			}
+			return val
+		},
+		"contains": strings.Contains,
+		"upper":    strings.ToUpper,
+		"lower":    strings.ToLower,
+	}
+}
+
+// ExecuteTemplate 处理配置内容中的 Go 模板语法。
+// 变量池作为模板数据上下文，通过 .VarName 访问。
+func ExecuteTemplate(content string, vars map[string]string) (string, error) {
+	tmpl, err := template.New("config").
+		Option("missingkey=zero").
+		Funcs(templateFuncMap()).
+		Parse(content)
+	if err != nil {
+		return "", fmt.Errorf("template parse error: %w", err)
+	}
+
+	var buf bytes.Buffer
+	if err := tmpl.Execute(&buf, vars); err != nil {
+		return "", fmt.Errorf("template execution error: %w", err)
+	}
+	return buf.String(), nil
+}
+
 // ReplaceVars 替换字符串中的变量，格式为 ${var}
 func ReplaceVars(str string, pool map[string]string) (string, error) {
 	re := regexp.MustCompile(`\$\{(.*?)\}`)
@@ -164,19 +198,25 @@ func ParseConfig(configPath string, varPool map[string]string) (*Config, error) 
 		return nil, fmt.Errorf("failed to read config file: %w", err)
 	}
 
-	// 3. 应用变量替换到配置文件内容
-	contentStr, err := ReplaceVars(string(content), varPool)
+	// 3. 执行 Go 模板
+	templated, err := ExecuteTemplate(string(content), varPool)
 	if err != nil {
 		return nil, err
 	}
 
-	// 4. 解析 YAML 配置
+	// 4. 应用变量替换到配置文件内容
+	contentStr, err := ReplaceVars(templated, varPool)
+	if err != nil {
+		return nil, err
+	}
+
+	// 5. 解析 YAML 配置
 	var cfg Config
 	if err := yaml.Unmarshal([]byte(contentStr), &cfg); err != nil {
 		return nil, fmt.Errorf("failed to parse config file: %w", err)
 	}
 
-	// 5. 验证必要字段
+	// 6. 验证必要字段
 	if cfg.From.Image == "" {
 		return nil, errors.New("from.image field is required in config file")
 	}

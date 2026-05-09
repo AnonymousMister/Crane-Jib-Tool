@@ -1,0 +1,56 @@
+# 示例：使用 Go 模板语法的配置文件
+# 支持 {{if}}、{{range}}、{{default}} 等模板指令
+# 变量通过 .VarName 访问，未定义的变量为空字符串（falsy）
+#
+# 用法示例：
+#   crane-jib-tool create -c configFile-template.yaml \
+#     --val IMAGE=registry.example.com/app \
+#     --val EnableMonitoring=true \
+#     --val EnableArm=true
+
+apiVersion: jib/v1alpha1
+kind: BuildFile
+
+from:
+  image: {{default "ubuntu:latest" .BaseImage}}
+  platforms:
+    - "linux/amd64"
+    {{- if .EnableArm}}
+    - "linux/arm64"
+    {{- end}}
+
+creationTime: ${TimestampTag}
+format: Docker
+
+to:
+  image: ${IMAGE}
+  tags:
+    - ${TimestampTag}
+    {{- if .ExtraTag}}
+    - "{{.ExtraTag}}"
+    {{- end}}
+
+{{- if .EnableEnv}}
+environment:
+  APP_ENV: "{{default "production" .AppEnv}}"
+  LOG_LEVEL: "{{default "info" .LogLevel}}"
+{{- end}}
+
+layers:
+  entries:
+    - name: "app"
+      files:
+        - src: "./app.jar"
+          dest: "/app/app.jar"
+    {{- if .EnableMonitoring}}
+    - name: "monitoring"
+      files:
+        - src: "./agent.jar"
+          dest: "/app/agent.jar"
+    {{- end}}
+    {{- if .EnableDebug}}
+    - name: "debug-tools"
+      files:
+        - src: "./debug-tools/"
+          dest: "/app/debug/"
+    {{- end}}
