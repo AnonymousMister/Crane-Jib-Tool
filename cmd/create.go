@@ -298,7 +298,6 @@ func NewCmdCreate(options *[]crane.Option) *cobra.Command {
 				fmt.Printf("   ✅ Platform %s completed!\n", actualPlatform.String())
 			}
 
-			repository := cfg.To.Repository
 			fmt.Printf("\n📦 Creating multi-platform manifest...\n")
 
 			// 从 OCI layout 加载索引
@@ -319,28 +318,31 @@ func NewCmdCreate(options *[]crane.Option) *cobra.Command {
 
 			o := crane.GetOptions(*options...)
 
-			// 推送到所有 tags（直接推送 index，不使用 crane.Tag 避免重复下载）
-			for i, tag := range cfg.To.Tags {
-				targetImage := repository + ":" + tag
-				if i == 0 {
-					fmt.Printf("   📤 Pushing to: %s\n", targetImage)
-				} else {
-					fmt.Printf("   🏷️  Pushing tag: %s\n", targetImage)
-				}
+			// 推送到所有目标仓库及其 tags
+			for _, target := range cfg.To {
+				for i, tag := range target.Tags {
+					targetImage := target.Repository + ":" + tag
+					if i == 0 {
+						fmt.Printf("   📤 Pushing to: %s\n", targetImage)
+					} else {
+						fmt.Printf("   🏷️  Pushing tag: %s\n", targetImage)
+					}
 
-				ref, err := name.ParseReference(targetImage, o.Name...)
-				if err != nil {
-					return fmt.Errorf("parsing reference: %w", err)
-				}
+					ref, err := name.ParseReference(targetImage, o.Name...)
+					if err != nil {
+						return fmt.Errorf("parsing reference: %w", err)
+					}
 
-				if err := remote.WriteIndex(ref, pushIdx, o.Remote...); err != nil {
-					return fmt.Errorf("pushing multi-platform index to %s: %w", targetImage, err)
+					if err := remote.WriteIndex(ref, pushIdx, o.Remote...); err != nil {
+						return fmt.Errorf("pushing multi-platform index to %s: %w", targetImage, err)
+					}
 				}
 			}
 
 			fmt.Printf("\n✅ Image creation completed successfully!\n")
-			fmt.Printf("   🎉 Repository: %s\n", cfg.To.Repository)
-			fmt.Printf("   🎉 Tags: %v\n", cfg.To.Tags)
+			for _, target := range cfg.To {
+				fmt.Printf("   🎉 Repository: %s, Tags: %v\n", target.Repository, target.Tags)
+			}
 			fmt.Printf("   🎉 Platforms: %v\n", platformImageRefs)
 			return nil
 		},

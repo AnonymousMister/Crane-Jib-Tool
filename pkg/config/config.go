@@ -27,7 +27,7 @@ type Config struct {
 	Entrypoint   []string          `yaml:"entrypoint"`
 	Cmd          []string          `yaml:"cmd"`
 	Layers       LayerConfig       `yaml:"layers"`
-	To           Tag               `yaml:"to"`
+	To           Targets           `yaml:"to"`
 	Insecure     bool              `yaml:"insecure"`
 }
 
@@ -52,6 +52,33 @@ func (t *Tag) UnmarshalYAML(value *yaml.Node) error {
 		return value.Decode((*rawTag)(t))
 	}
 	return fmt.Errorf("unsupported tag type: %s", value.Tag)
+}
+
+// Targets 是 Tag 的切片，支持单目标（字符串/映射）和多目标（数组）三种 YAML 格式
+type Targets []Tag
+
+func (ts *Targets) UnmarshalYAML(value *yaml.Node) error {
+	switch value.Kind {
+	case yaml.ScalarNode, yaml.MappingNode:
+		var t Tag
+		if err := t.UnmarshalYAML(value); err != nil {
+			return err
+		}
+		*ts = Targets{t}
+		return nil
+	case yaml.SequenceNode:
+		result := make(Targets, 0, len(value.Content))
+		for _, node := range value.Content {
+			var t Tag
+			if err := t.UnmarshalYAML(node); err != nil {
+				return err
+			}
+			result = append(result, t)
+		}
+		*ts = result
+		return nil
+	}
+	return fmt.Errorf("unsupported to field type: %s", value.Tag)
 }
 
 // FromConfig 定义了基础镜像的配置
@@ -180,7 +207,7 @@ func ParseConfig(configPath string, varPool map[string]string) (*Config, error) 
 	if cfg.From.Image == "" {
 		return nil, errors.New("from.image field is required in config file")
 	}
-	if cfg.To.Repository == "" {
+	if len(cfg.To) == 0 || cfg.To[0].Repository == "" {
 		return nil, errors.New("to field is required in config file")
 	}
 
